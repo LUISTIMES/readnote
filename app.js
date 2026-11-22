@@ -1,5 +1,5 @@
 /* ReadNote — 阅读 · 标注 · 脑图
- * 零依赖单页应用（PDF.js 由 CDN 提供）。
+ * 零依赖单页应用（PDF.js 已本地化到 vendor/，离线可用）。
  * 数据模型：annotations（标注）+ tree（脑图节点树），持久化到 IndexedDB。
  */
 (function () {
@@ -26,6 +26,7 @@
   const el = {
     fileInput: $('#fileInput'), sampleBtn: $('#sampleBtn'),
     exportBtn: $('#exportBtn'), exportMenu: $('#exportMenu'), saveBtn: $('#saveBtn'),
+    importBtn: $('#importBtn'), importInput: $('#importInput'),
     emptyState: $('#emptyState'), emptyOpen: $('#emptyOpen'), pages: $('#pages'), reader: $('#reader'),
     outlinePanel: $('#outlinePanel'), notesPanel: $('#notesPanel'),
     selToolbar: $('#selToolbar'), noteModal: $('#noteModal'),
@@ -221,9 +222,18 @@
         <span class="dot" style="background:${a.color}"></span>
         <span class="pg">P${a.page}</span>
         <span class="txt">${esc(a.text.slice(0, 80))}${a.text.length > 80 ? '…' : ''}</span>
+        <button class="del-anno" data-id="${a.id}" title="删除标注">×</button>
       </div>`).join('');
     el.outlinePanel.querySelectorAll('.outline-item').forEach(it => {
-      it.addEventListener('click', () => jumpTo(it.dataset.id));
+      it.addEventListener('click', (e) => {
+        if (!e.target.classList.contains('del-anno')) jumpTo(it.dataset.id);
+      });
+    });
+    el.outlinePanel.querySelectorAll('.del-anno').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteAnnotation(b.dataset.id);
+      });
     });
   }
 
@@ -248,10 +258,23 @@
     el.notesPanel.querySelectorAll('.del-note').forEach(b => {
       b.addEventListener('click', e => {
         e.stopPropagation();
-        S.annotations = S.annotations.filter(a => a.id !== b.dataset.id);
-        pruneTree(); refreshAll(); persist(true);
+        deleteAnnotation(b.dataset.id);
       });
     });
+  }
+
+  function deleteAnnotation(id) {
+    S.annotations = S.annotations.filter(a => a.id !== id);
+    // 同步删除脑图中来源为该标注的节点（含其子树）
+    const stripBySource = (n) => {
+      n.children = n.children.filter(c => c.sourceId !== id);
+      n.children.forEach(stripBySource);
+    };
+    stripBySource(S.tree);
+    // 重绘所有页面高亮层（简单可靠，页数不多）
+    S.pageEls.forEach(r => drawHighlights(r));
+    if (mmSelected && !findNode(S.tree, mmSelected)) mmSelected = null;
+    refreshAll(); persist(true); toast('标注已删除');
   }
 
   function jumpTo(id) {
@@ -466,11 +489,52 @@ blockquote{border-left:3px solid #e8c94a;background:#fffbe8;margin:8px 0;padding
     });
     download(baseName() + '_anki.csv', 'Front,Back,Tags\n' + rows.join('\n'), 'text/csv;charset=utf-8');
   }
+  // ArrayBuffer <-> base64（分块处理，避免大 PDF 时栈溢出）
+  function bufToB64(buf) {
+    if (!buf) return null;
+    const bytes = new Uint8Array(buf), CHUNK = 0x8000;
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
+  }
+  function b64ToBuf(b64) {
+    if (!b64) return null;
+    const bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
   function exportJSON() {
-    download(baseName() + '_backup.json', JSON.stringify({
-      app: 'ReadNote', version: 1, pdfName: S.pdfName,
+    const payload = {
+      app: 'ReadNote', version: 2, pdfName: S.pdfName,
+      pdfB64: bufToB64(S.pdfBytes),
       annotations: S.annotations, tree: S.tree,
-    }, null, 2), 'application/json');
+    };
+    download(baseName() + '_backup.json', JSON.stringify(payload), 'application/json');
+  }
+
+  async function importJSON(file) {
+    try {
+      const data = JSON.parse(await file.text());
+      if (data.app !== 'ReadNote') throw new Error('不是 ReadNote 备份文件');
+      const bytes = b64ToBuf(data.pdfB64);
+      if (bytes) {
+        await loadPDF(bytes, data.pdfName || '恢复的文档.pdf', true);
+      } else {
+        // 旧版备份或纯数据：清掉 PDF，仅恢复标注/脑图
+        S.pdf = null; S.pdfBytes = null; S.pdfName = data.pdfName || '';
+        S.pageEls = [];
+        el.pages.innerHTML = ''; el.pages.classList.add('hidden');
+        el.emptyState.classList.remove('hidden');
+      }
+      S.annotations = data.annotations || [];
+      S.tree = data.tree || makeRoot('我的笔记');
+      refreshAll(); persist(true);
+      toast(`已导入备份：${S.annotations.length} 条标注${bytes ? ' + PDF' : ''}`);
+    } catch (err) {
+      toast('导入失败：' + (err.message || '文件格式错误'));
+    }
   }
 
   // ---------- 事件绑定 ----------
@@ -483,6 +547,12 @@ blockquote{border-left:3px solid #e8c94a;background:#fffbe8;margin:8px 0;padding
     });
     el.sampleBtn.addEventListener('click', () => makeSample());
     el.saveBtn.addEventListener('click', () => persist());
+    el.importBtn.addEventListener('click', () => el.importInput.click());
+    el.importInput.addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      importJSON(f);
+      e.target.value = ''; // 允许重复导入同一文件
+    });
 
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
