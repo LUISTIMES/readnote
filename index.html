@@ -20,6 +20,7 @@
       <input type="file" id="fileInput" accept="application/pdf" hidden>
       <button class="btn" id="sampleBtn">示例文档</button>
       <span class="sep"></span>
+      <button class="btn icon-text" id="darkBtn" title="切换深色模式">🌙</button>
       <button class="btn" id="exportBtn">导出 ▾</button>
       <div id="exportMenu" class="menu hidden">
         <button data-export="md">Markdown</button>
@@ -39,16 +40,69 @@
       <div class="tabs">
         <button class="tab active" data-tab="outline">大纲</button>
         <button class="tab" data-tab="notes">笔记</button>
+        <button class="tab" data-tab="contents">目录</button>
+        <button class="tab" data-tab="search">搜索</button>
+        <button class="tab" data-tab="library">书架</button>
       </div>
-      <div id="outlinePanel" class="panel"></div>
-      <div id="notesPanel" class="panel hidden"></div>
+
+      <div class="panel-wrap" id="outlineWrap">
+        <div class="panel-tools">
+          <input id="outlineFilter" type="search" placeholder="筛选标注文字或笔记…">
+          <select id="outlineColorFilter" title="按颜色筛选">
+            <option value="">全部颜色</option>
+            <option value="#fff3a3">黄色</option>
+            <option value="#a8e6a3">绿色</option>
+            <option value="#a8d5ff">蓝色</option>
+            <option value="#ffb3b3">红色</option>
+          </select>
+        </div>
+        <div id="outlinePanel" class="panel"></div>
+      </div>
+
+      <div class="panel-wrap hidden" id="notesWrap">
+        <div class="panel-tools">
+          <input id="notesFilter" type="search" placeholder="搜索笔记…">
+        </div>
+        <div id="notesPanel" class="panel"></div>
+      </div>
+
+      <div class="panel-wrap hidden" id="contentsWrap">
+        <div class="panel-tools"><span class="tools-title">书签 / PDF 目录</span></div>
+        <div id="contentsPanel" class="panel"></div>
+      </div>
+
+      <div class="panel-wrap hidden" id="searchWrap">
+        <div class="panel-tools">
+          <input id="searchInputSide" type="search" placeholder="全文搜索…">
+        </div>
+        <div id="searchPanel" class="panel"></div>
+      </div>
+
+      <div class="panel-wrap hidden" id="libraryWrap">
+        <div class="panel-tools"><span class="tools-title">本地书架（保存在浏览器）</span></div>
+        <div id="libraryPanel" class="panel"></div>
+      </div>
     </aside>
 
     <main class="reader" id="reader">
+      <div class="reader-toolbar">
+        <button class="tool-btn" id="prevPage" title="上一页">‹</button>
+        <input class="page-input" id="pageNum" type="number" min="1" value="1" aria-label="页码">
+        <span class="page-total">/ <span id="pageCount">—</span></span>
+        <button class="tool-btn" id="nextPage" title="下一页">›</button>
+        <span class="sep"></span>
+        <button class="tool-btn" id="zoomOut" title="缩小">−</button>
+        <span class="zoom-label" id="zoomLabel">100%</span>
+        <button class="tool-btn" id="zoomIn" title="放大">＋</button>
+        <button class="tool-btn wide" id="zoomFit" title="适应宽度">适应</button>
+        <span class="sep"></span>
+        <button class="tool-btn" id="bookmarkBtn" title="添加/取消本页书签">☆</button>
+        <input class="quick-search" id="quickSearch" type="search" placeholder="搜索全文…">
+      </div>
       <div id="emptyState" class="empty-state">
         <div class="empty-icon">📖</div>
         <h2>打开一本书开始阅读</h2>
-        <p>支持 PDF。选中文字即可高亮标注，标注会自动进入大纲和脑图。</p>
+        <p id="emptyDesc">支持 PDF。选中文字即可高亮标注，标注会自动进入大纲和脑图。</p>
         <button class="btn btn-primary" id="emptyOpen">选择 PDF 文件</button>
       </div>
       <div id="pages" class="pages hidden"></div>
@@ -63,7 +117,7 @@
         </div>
       </div>
       <div id="mindmap" class="mindmap"></div>
-      <div class="hint">拖动节点可连线整理 · 双击编辑 · Delete 删除</div>
+      <div class="hint">拖动节点可重组 · 双击编辑标题 · Delete 删除节点</div>
     </aside>
   </div>
 
@@ -78,11 +132,17 @@
 
   <div id="noteModal" class="modal hidden">
     <div class="modal-card">
-      <h3>笔记</h3>
+      <h3 id="noteModalTitle">标注笔记</h3>
       <blockquote id="noteQuote"></blockquote>
+      <div class="color-row" id="noteColors">
+        <button class="color-dot" data-color="#fff3a3" title="黄色"></button>
+        <button class="color-dot" data-color="#a8e6a3" title="绿色"></button>
+        <button class="color-dot" data-color="#a8d5ff" title="蓝色"></button>
+        <button class="color-dot" data-color="#ffb3b3" title="红色"></button>
+      </div>
       <textarea id="noteText" placeholder="写下你的想法…"></textarea>
       <div class="modal-actions">
-        <label><input type="checkbox" id="addToMap" checked> 同时加入脑图</label>
+        <label id="addToMapWrap"><input type="checkbox" id="addToMap" checked> 同时加入脑图</label>
         <button class="btn" id="noteCancel">取消</button>
         <button class="btn btn-primary" id="noteSave">保存</button>
       </div>
