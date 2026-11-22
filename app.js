@@ -202,7 +202,10 @@
 
     if (S.pdfBytes) {
       try {
-        S.pdf = await pdfjsLib.getDocument({ data: new Uint8Array(S.pdfBytes) }).promise;
+        // PDF.js 会把传入的 buffer transfer 给 Worker，必须传副本，否则 S.pdfBytes 被 detach，
+        // 后续 persist()/exportJSON() 会因无法克隆 detached ArrayBuffer 而失败。
+        const workerBytes = S.pdfBytes.slice(0);
+        S.pdf = await pdfjsLib.getDocument({ data: new Uint8Array(workerBytes) }).promise;
         const outline = await S.pdf.getOutline().catch(() => []) || [];
         S.outlineItems = await Promise.all(outline.map(async (o) => ({
           title: o.title || '未命名章节', page: await resolveDest(o.dest)
@@ -284,6 +287,7 @@
       const next = curDoc();
       if (next) await hydrateDoc(next); else clearAll();
     }
+    refreshAll(); // 删除非当前文档时也要刷新书架列表
     await persist(true);
     toast('已删除');
   }
@@ -530,7 +534,11 @@
     el.pageNum.max = total || 1;
     S.recentPage = clamp(S.recentPage || 1, 1, total || 1);
     el.pageNum.value = S.recentPage;
-    el.zoomLabel.textContent = Math.round(S.scale * 100) + '%';
+    const hasPdf = !!S.pdf;
+    el.zoomOut.disabled = !hasPdf;
+    el.zoomIn.disabled = !hasPdf;
+    el.zoomFit.disabled = !hasPdf;
+    el.zoomLabel.textContent = hasPdf ? Math.round(S.scale * 100) + '%' : '—';
     updateBookmarkBtn();
   }
   function updateBookmarkBtn() {
@@ -924,6 +932,13 @@
   }
   function deleteSelectedNode() {
     if (!mmSelected || mmSelected === 'root') return;
+    const node = findNode(S.tree, mmSelected);
+    if (!node) return;
+    // 由标注生成的节点被手动删掉后，要标记 noMap，否则下次 refreshAll 会被自动加回来
+    if (node.sourceId) {
+      const a = S.annotations.find(x => x.id === node.sourceId);
+      if (a) a.noMap = true;
+    }
     removeNode(S.tree, mmSelected);
     pruneEmptyGroups();
     mmSelected = null; refreshMap(); persist(true); toast('节点已删除');
@@ -1121,12 +1136,18 @@ blockquote{border-left:3px solid #e8c94a;background:#fffbe8;margin:8px 0;padding
   async function init() {
     bind();
     const q = new URLSearchParams(location.search);
-    if (q.get('sample') === '1') { await makeSample(); return; }
+    let had = false;
     try {
-      const had = await restore();
+      had = await restore();
       applyDark();
-      if (had && curDoc()) await hydrateDoc(curDoc());
     } catch (err) { console.warn('restore failed', err); }
+
+    if (q.get('sample') === '1') {
+      const existing = S.library.docs.find(d => d.kind === 'sample');
+      if (existing) await hydrateDoc(existing); else await makeSample();
+      return;
+    }
+    if (had && curDoc()) await hydrateDoc(curDoc());
     const pdfUrl = q.get('pdf');
     if (pdfUrl) {
       fetch(pdfUrl).then(r => r.arrayBuffer()).then(b => loadPDF(b, pdfUrl.split('/').pop()))
