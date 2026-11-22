@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReadNote — 阅读·标注·脑图</title>
+<link rel="stylesheet" href="styles.css">
+<script src="vendor/pdf.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">R</span>
+      <span class="brand-name">ReadNote</span>
+      <span class="brand-tag">阅读 · 标注 · 脑图</span>
+    </div>
+    <div class="topbar-actions">
+      <label class="btn btn-primary" for="fileInput">+ 打开 PDF</label>
+      <input type="file" id="fileInput" accept="application/pdf" hidden>
+      <button class="btn" id="sampleBtn">示例文档</button>
+      <span class="sep"></span>
+      <button class="btn" id="exportBtn">导出 ▾</button>
+      <div id="exportMenu" class="menu hidden">
+        <button data-export="md">Markdown</button>
+        <button data-export="html">HTML</button>
+        <button data-export="opml">OPML（脑图）</button>
+        <button data-export="anki">Anki 卡片（CSV）</button>
+        <button data-export="json">JSON 备份</button>
+      </div>
+      <button class="btn" id="saveBtn">保存</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="tabs">
+        <button class="tab active" data-tab="outline">大纲</button>
+        <button class="tab" data-tab="notes">笔记</button>
+      </div>
+      <div id="outlinePanel" class="panel"></div>
+      <div id="notesPanel" class="panel hidden"></div>
+    </aside>
+
+    <main class="reader" id="reader">
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">📖</div>
+        <h2>打开一本书开始阅读</h2>
+        <p>支持 PDF。选中文字即可高亮标注，标注会自动进入大纲和脑图。</p>
+        <button class="btn btn-primary" id="emptyOpen">选择 PDF 文件</button>
+      </div>
+      <div id="pages" class="pages hidden"></div>
+    </main>
+
+    <aside class="mindmap-pane">
+      <div class="pane-head">
+        <span>思维导图</span>
+        <div class="pane-tools">
+          <button class="icon-btn" id="addNodeBtn" title="添加节点">+</button>
+          <button class="icon-btn" id="fitBtn" title="适应画布">⤢</button>
+        </div>
+      </div>
+      <div id="mindmap" class="mindmap"></div>
+      <div class="hint">拖动节点可连线整理 · 双击编辑 · Delete 删除</div>
+    </aside>
+  </div>
+
+  <div id="selToolbar" class="sel-toolbar hidden">
+    <button class="hl" data-color="#fff3a3" title="黄色"></button>
+    <button class="hl" data-color="#a8e6a3" title="绿色"></button>
+    <button class="hl" data-color="#a8d5ff" title="蓝色"></button>
+    <button class="hl" data-color="#ffb3b3" title="红色"></button>
+    <span class="sep"></span>
+    <button class="sel-action" id="selNote">标注 + 笔记</button>
+  </div>
+
+  <div id="noteModal" class="modal hidden">
+    <div class="modal-card">
+      <h3>笔记</h3>
+      <blockquote id="noteQuote"></blockquote>
+      <textarea id="noteText" placeholder="写下你的想法…"></textarea>
+      <div class="modal-actions">
+        <label><input type="checkbox" id="addToMap" checked> 同时加入脑图</label>
+        <button class="btn" id="noteCancel">取消</button>
+        <button class="btn btn-primary" id="noteSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
