@@ -84,6 +84,12 @@ body {
 }
 .outline-item .txt { flex: 1; font-size: 13px; line-height: 1.45; }
 .outline-item .dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; margin-top: 5px; }
+.outline-item .del-anno {
+  flex: 0 0 auto; border: 0; background: none; color: var(--muted);
+  font-size: 17px; line-height: 1; cursor: pointer; padding: 0 2px; opacity: 0; transition: .15s;
+}
+.outline-item:hover .del-anno { opacity: 1; }
+.outline-item .del-anno:hover { color: #c0392b; }
 .outline-empty, .notes-empty { color: var(--muted); text-align: center; padding: 30px 12px; font-size: 13px; }
 
 /* note card */
