@@ -26,8 +26,10 @@
         <button data-export="html">HTML</button>
         <button data-export="opml">OPML（脑图）</button>
         <button data-export="anki">Anki 卡片（CSV）</button>
-        <button data-export="json">JSON 备份</button>
+        <button data-export="json">JSON 备份（含 PDF）</button>
       </div>
+      <button class="btn" id="importBtn">导入备份</button>
+      <input type="file" id="importInput" accept=".json,application/json" hidden>
       <button class="btn" id="saveBtn">保存</button>
     </div>
   </header>
