@@ -150,6 +150,7 @@ body.dark .note-card .q { color: #d8d3b6; }
 }
 .tool-btn.wide { font-size: 12px; padding: 0 8px; }
 .tool-btn:hover { border-color: var(--accent); color: var(--accent-dark); }
+.tool-btn:disabled { opacity: .4; cursor: not-allowed; }
 .tool-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 body.dark .tool-btn.active { color: #18201b; }
 .page-input {
