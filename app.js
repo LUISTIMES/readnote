@@ -111,15 +111,23 @@
   }
 
   // ---------- IndexedDB ----------
+  let dbPromise = null; // 复用单一连接，避免每次 persist 都 open 新连接导致累积
   function openDB() {
-    return new Promise((res, rej) => {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise((res, rej) => {
       const r = indexedDB.open(DB_NAME, DB_VER);
       r.onupgradeneeded = () => {
         if (!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE);
       };
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
+      r.onsuccess = () => {
+        const db = r.result;
+        db.onversionchange = () => { db.close(); dbPromise = null; }; // 其他标签页升级时让出连接
+        res(db);
+      };
+      r.onerror = () => { dbPromise = null; rej(r.error); };
+      r.onblocked = () => { dbPromise = null; rej(new Error('IndexedDB 升级被其他标签页阻塞')); };
     });
+    return dbPromise;
   }
   async function persist(silent) {
     syncDoc();
@@ -317,19 +325,23 @@
   }
 
   // ---------- PDF / 示例页渲染 ----------
+  let renderGen = 0; // 渲染代际锁：快速连点缩放/切文档时，只有最新一次渲染的结果有效
   async function renderAll() {
     if (!S.pdf) return;
+    const gen = ++renderGen;
     el.pages.innerHTML = '';
     S.pageEls = [];
     el.emptyState.classList.add('hidden');
     el.pages.classList.remove('hidden');
 
     const base = (await S.pdf.getPage(1)).getViewport({ scale: 1 });
+    if (gen !== renderGen) return;
     const targetW = Math.min(el.reader.clientWidth - 80, 900);
     if (S.scaleMode === 'auto') S.scale = clamp(targetW / base.width, 0.8, 1.8);
 
     for (let n = 1; n <= S.pdf.numPages; n++) {
       const page = await S.pdf.getPage(n);
+      if (gen !== renderGen) return;
       const viewport = page.getViewport({ scale: S.scale });
       const wrap = document.createElement('div');
       wrap.className = 'page-wrap';
@@ -357,15 +369,19 @@
       S.pageEls.push(rec);
 
       await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      if (gen !== renderGen) return;
       const tc = await page.getTextContent();
+      if (gen !== renderGen) return;
       if (pdfjsLib.TextLayer) {
         await new pdfjsLib.TextLayer({ textContentSource: tc, container: textLayer, viewport }).render();
       } else {
         await pdfjsLib.renderTextLayer({ textContent: tc, container: textLayer, viewport, textDivs: [] }).promise;
       }
+      if (gen !== renderGen) return;
       drawHighlights(rec);
       setupSelection(rec);
     }
+    if (gen !== renderGen) return;
     drawSearchHighlights();
     updateToolbar();
   }
@@ -845,6 +861,7 @@
   function refreshMap() {
     if (!S.tree) S.tree = makeRoot('我的笔记');
     if (!findNode(S.tree, 'root')) S.tree = makeRoot(baseName());
+    const annoById = new Map(S.annotations.map(a => [a.id, a])); // 避免每个节点都线性 find（O(n²)）
     const pos = layoutTree();
     const maxX = Math.max(...pos.values().map(p => p.x), 200) + 200;
     const maxY = Math.max(...pos.values().map(p => p.y), 100) + 80;
@@ -883,7 +900,7 @@
       d.dataset.id = node.id; d.draggable = node.id !== 'root';
       let html = `<div class="ttl">${esc(node.title)}</div>`;
       if (node.sourceId) {
-        const a = S.annotations.find(x => x.id === node.sourceId);
+        const a = annoById.get(node.sourceId);
         if (a) html += `<span class="src">P${a.page} · ${esc(a.text.slice(0, 18))}…</span>`;
       }
       d.innerHTML = html;
