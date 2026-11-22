@@ -133,10 +133,12 @@
   }
   async function restore() {
     const db = await openDB();
-    const data = await new Promise((res) => {
+    const data = await new Promise((res, rej) => {
       const tx = db.transaction(STORE, 'readonly');
       const rq = tx.objectStore(STORE).get('main');
       rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+      tx.onerror = () => rej(tx.error);
     });
     if (!data) return false;
 
@@ -145,10 +147,10 @@
       docs = data.library.docs.map(d => ({
         id: d.id || uid(),
         name: d.name || d.pdfName || '未命名',
-        pdfBytes: d.pdfBytes || null,
-        annotations: Array.isArray(d.annotations) ? d.annotations : [],
-        tree: d.tree || makeRoot(d.name || '我的笔记'),
-        bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks : [],
+        pdfBytes: d.pdfBytes && (d.pdfBytes instanceof ArrayBuffer || ArrayBuffer.isView(d.pdfBytes)) ? d.pdfBytes : null,
+        annotations: sanitizeAnnos(d.annotations),
+        tree: sanitizeTree(d.tree, d.name || '我的笔记'),
+        bookmarks: Array.isArray(d.bookmarks) ? d.bookmarks.filter(p => Number.isFinite(p)) : [],
         recentPage: d.recentPage || 1,
         pageCount: d.pageCount || 0,
         kind: d.kind || (d.pdfBytes ? 'pdf' : 'nopdf'),
@@ -195,6 +197,10 @@
     S.bookmarks = Array.isArray(d.bookmarks) ? d.bookmarks : [];
     S.recentPage = d.recentPage || 1;
     S.isSample = d.kind === 'sample';
+    // 切换文档时销毁上一份 PDF.js 文档，释放 worker/内存，避免多次切换累积占用
+    if (S.pdf && typeof S.pdf.destroy === 'function') {
+      try { S.pdf.destroy().catch(() => {}); } catch (e) {}
+    }
     S.pdf = null;
     S.outlineItems = S.isSample ? SAMPLE_TEXT.map((c, i) => ({ title: c[0], page: i + 1 })) : [];
     S.searchQuery = ''; S.searchResults = [];
@@ -1023,6 +1029,41 @@ blockquote{border-left:3px solid #e8c94a;background:#fffbe8;margin:8px 0;padding
     };
     download(baseName() + '_backup.json', JSON.stringify(payload), 'application/json');
   }
+  function sanitizeAnnos(list) {
+    if (!Array.isArray(list)) return [];
+    return list.filter(a => a && typeof a === 'object').map(a => ({
+      id: typeof a.id === 'string' && a.id ? a.id : uid(),
+      page: Math.max(1, Number(a.page) || 1),
+      text: typeof a.text === 'string' ? a.text : String(a.text == null ? '' : a.text),
+      note: typeof a.note === 'string' ? a.note : '',
+      color: typeof a.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(a.color) ? a.color : COLORS[0],
+      rects: Array.isArray(a.rects) ? a.rects.filter(r => r && typeof r === 'object' && Number.isFinite(r.x) && Number.isFinite(r.y)) : [],
+      noMap: !!a.noMap,
+      createdAt: Number(a.createdAt) || Date.now(),
+    }));
+  }
+  function sanitizeTree(tree, name) {
+    const fallback = makeRoot(name || '我的笔记');
+    if (!tree || typeof tree !== 'object') return fallback;
+    const walk = (n, depth) => {
+      if (!n || typeof n !== 'object' || depth > 40) return null;
+      const kids = Array.isArray(n.children) ? n.children.map(c => walk(c, depth + 1)).filter(Boolean) : [];
+      return {
+        id: n.id === 'root' ? 'root' : (typeof n.id === 'string' && n.id ? n.id : uid()),
+        title: typeof n.title === 'string' ? n.title : '未命名',
+        note: typeof n.note === 'string' ? n.note : '',
+        color: typeof n.color === 'string' ? n.color : '#3a7d5d',
+        sourceId: typeof n.sourceId === 'string' ? n.sourceId : null,
+        kind: n.kind,
+        page: Number.isFinite(n.page) ? n.page : undefined,
+        children: kids,
+      };
+    };
+    const root = walk(tree, 0);
+    if (!root || root.id !== 'root') return fallback;
+    root.title = root.title || (name || '我的笔记');
+    return root;
+  }
   async function importJSON(file) {
     try {
       const data = JSON.parse(await file.text());
@@ -1030,9 +1071,9 @@ blockquote{border-left:3px solid #e8c94a;background:#fffbe8;margin:8px 0;padding
       const bytes = b64ToBuf(data.pdfB64);
       const d = {
         id: uid(), name: data.name || data.pdfName || '导入的文档',
-        pdfBytes: bytes, annotations: Array.isArray(data.annotations) ? data.annotations : [],
-        tree: data.tree || makeRoot(data.name || '我的笔记'),
-        bookmarks: Array.isArray(data.bookmarks) ? data.bookmarks : [],
+        pdfBytes: bytes, annotations: sanitizeAnnos(data.annotations),
+        tree: sanitizeTree(data.tree, data.name || data.pdfName),
+        bookmarks: Array.isArray(data.bookmarks) ? data.bookmarks.filter(p => Number.isFinite(p)) : [],
         recentPage: 1, pageCount: 0, kind: bytes ? 'pdf' : (data.kind === 'sample' ? 'sample' : 'nopdf'),
         createdAt: Date.now(), updatedAt: Date.now(),
       };
